@@ -99,7 +99,9 @@ async def hash_monitor(provider: Dict[str, Any]) -> None:
                                     status=incident["status"],
                                     severity=incident["severity"],
                                     incident_id=incident_id,
-                                    title=incident["title"]
+                                    title=incident["title"],
+                                    link=incident.get("link", ""),
+                                    raw_payload=incident.get("raw_payload", {})
                                 )
                     else:
                         print(f"[WARN] {name}: Status {response.status}")

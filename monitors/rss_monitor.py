@@ -102,7 +102,9 @@ async def rss_monitor(provider: Dict[str, Any]) -> None:
                                 status=entry["status"],
                                 severity=entry["severity"],
                                 incident_id=entry_id,
-                                title=entry["title"]
+                                title=entry["title"],
+                                link=entry.get("link", ""),
+                                raw_payload=entry.get("raw_payload", {})
                             )
 
                         first_run = False

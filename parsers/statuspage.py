@@ -77,7 +77,7 @@ def parse_rss_feed(xml_body: str) -> List[Dict[str, Any]]:
         xml_body: Raw XML content
 
     Returns:
-        List of parsed entries with id, title, message, status, severity, components
+        List of parsed entries with id, title, message, status, severity, components, raw_payload
     """
     feed = feedparser.parse(xml_body)
     entries = []
@@ -90,24 +90,56 @@ def parse_rss_feed(xml_body: str) -> List[Dict[str, Any]]:
         title = getattr(entry, "title", "Unknown Incident")
         summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
 
-        # Clean HTML from summary
-        summary_clean = re.sub(r"<[^>]+>", "", summary).strip()
+        # Keep original HTML summary for raw display
+        raw_summary = summary
+
+        # Clean HTML from summary for display
+        summary_clean = re.sub(r"<[^>]+>", " ", summary).strip()
         summary_clean = re.sub(r"\s+", " ", summary_clean)
 
-        # Extract components from title or summary
-        components = extract_components_from_text(f"{title} {summary_clean}")
+        # Better component extraction - look for "Affected:" pattern
+        components = []
+
+        # Try to find affected components in common patterns
+        affected_match = re.search(r"Affected(?:\s+components?)?[:\s]+([^.]+)", summary_clean, re.IGNORECASE)
+        if affected_match:
+            affected_text = affected_match.group(1)
+            # Split by common delimiters
+            for comp in re.split(r'[,;]|\s+and\s+', affected_text):
+                comp = comp.strip()
+                if comp and len(comp) > 2:
+                    components.append(comp)
+
+        # If no components found, try pattern matching
+        if not components:
+            components = extract_components_from_text(f"{title} {summary_clean}")
+
         if not components:
             components = ["Service"]
+
+        # Build raw payload with all available data
+        raw_payload = {
+            "entry_id": entry_id,
+            "title": title,
+            "summary_html": raw_summary,
+            "summary_text": summary_clean,
+            "link": getattr(entry, "link", ""),
+            "published": getattr(entry, "published", None),
+            "updated": getattr(entry, "updated", None),
+            "author": getattr(entry, "author", None),
+        }
 
         entries.append({
             "id": entry_id,
             "title": title,
             "message": summary_clean or title,
-            "status": extract_status(title),
+            "status": extract_status(f"{title} {summary_clean}"),
             "severity": extract_severity(f"{title} {summary_clean}"),
-            "components": components,
+            "components": components[:5],  # Limit to 5
             "published": getattr(entry, "published", None),
             "updated": getattr(entry, "updated", None),
+            "link": getattr(entry, "link", ""),
+            "raw_payload": raw_payload,
         })
 
     return entries
@@ -145,14 +177,36 @@ def parse_json_api(body: str, provider_name: str) -> List[Dict[str, Any]]:
         if not components:
             components = ["Service"]
 
-        # Get latest update
+        # Get all updates for timeline
         updates = incident.get("incident_updates", [])
         latest_message = ""
+        all_updates = []
         if updates:
             latest_message = updates[0].get("body", "")
+            for upd in updates[:5]:  # Keep last 5 updates
+                upd_body = re.sub(r"<[^>]+>", " ", upd.get("body", "")).strip()
+                all_updates.append({
+                    "status": upd.get("status", ""),
+                    "body": upd_body,
+                    "created_at": upd.get("created_at", ""),
+                })
 
         # Clean HTML
-        latest_message = re.sub(r"<[^>]+>", "", latest_message).strip()
+        latest_message = re.sub(r"<[^>]+>", " ", latest_message).strip()
+
+        # Build raw payload
+        raw_payload = {
+            "incident_id": incident_id,
+            "name": incident.get("name", ""),
+            "status": incident.get("status", ""),
+            "impact": incident.get("impact", ""),
+            "shortlink": incident.get("shortlink", ""),
+            "created_at": incident.get("created_at", ""),
+            "updated_at": incident.get("updated_at", ""),
+            "resolved_at": incident.get("resolved_at", ""),
+            "components": [c.get("name", "") for c in incident.get("components", [])],
+            "updates": all_updates,
+        }
 
         parsed_incidents.append({
             "id": incident_id,
@@ -163,6 +217,8 @@ def parse_json_api(body: str, provider_name: str) -> List[Dict[str, Any]]:
             "components": components,
             "created_at": incident.get("created_at"),
             "updated_at": incident.get("updated_at"),
+            "link": incident.get("shortlink", ""),
+            "raw_payload": raw_payload,
         })
 
     return parsed_incidents

@@ -9,7 +9,7 @@ FastAPI app that:
 
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -27,8 +27,13 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
-# Track background tasks
+# Track background tasks and app start time
 background_tasks = []
+app_start_time_utc = None
+app_start_time_ist = None
+
+# IST timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 @asynccontextmanager
@@ -37,10 +42,16 @@ async def lifespan(app: FastAPI):
     Lifespan context manager - runs on startup/shutdown.
     Starts all monitors as background tasks.
     """
-    global background_tasks
+    global background_tasks, app_start_time_utc, app_start_time_ist
+
+    # Record application start time
+    app_start_time_utc = datetime.now(timezone.utc)
+    app_start_time_ist = app_start_time_utc.astimezone(IST)
 
     print("=" * 60)
     print("STATUS MONITOR - Starting up")
+    print(f"Start Time (UTC): {app_start_time_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    print(f"Start Time (IST): {app_start_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print("=" * 60)
 
     # Count providers by mode
@@ -95,6 +106,11 @@ async def serve_ui(request: Request):
     rss_providers = [p for p in PROVIDERS if p["mode"] == "rss"]
     hash_providers = [p for p in PROVIDERS if p["mode"] == "hash"]
 
+    # Calculate uptime
+    now_utc = datetime.now(timezone.utc)
+    uptime = now_utc - app_start_time_utc if app_start_time_utc else timedelta(0)
+    uptime_str = str(uptime).split('.')[0]  # Remove microseconds
+
     return templates.TemplateResponse(
         "index.html",
         {
@@ -107,7 +123,10 @@ async def serve_ui(request: Request):
             "total_providers": len(PROVIDERS),
             "rss_count": len(rss_providers),
             "hash_count": len(hash_providers),
-            "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "start_time_utc": app_start_time_utc.strftime("%Y-%m-%d %H:%M:%S UTC") if app_start_time_utc else "N/A",
+            "start_time_ist": app_start_time_ist.strftime("%Y-%m-%d %H:%M:%S IST") if app_start_time_ist else "N/A",
+            "uptime": uptime_str
         }
     )
 

@@ -8,7 +8,7 @@ Handles:
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from .state import state
 
 
@@ -19,7 +19,9 @@ async def on_change(
     status: str,
     severity: str,
     incident_id: Optional[str] = None,
-    title: Optional[str] = None
+    title: Optional[str] = None,
+    link: Optional[str] = None,
+    raw_payload: Optional[Dict[str, Any]] = None
 ) -> None:
     """
     Handle detected incident/update.
@@ -32,6 +34,8 @@ async def on_change(
         severity: Impact level (minor, major, critical)
         incident_id: Unique incident identifier
         title: Incident title
+        link: Link to incident page
+        raw_payload: Raw data from provider for display
     """
     now = datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -44,7 +48,7 @@ async def on_change(
     components_str = ", ".join(components) if components else "Unknown"
 
     print(f"\n[{timestamp}] Product: {provider_name} - {components_str}")
-    print(f"Status: {message}")
+    print(f"Status: {message[:200]}{'...' if len(message) > 200 else ''}")
     if title:
         print(f"Incident: {title}")
     print(f"Severity: {severity.upper()}")
@@ -62,8 +66,10 @@ async def on_change(
         "message": message,
         "status": status,
         "severity": severity,
+        "link": link or "",
         "detected_at": now.isoformat(),
-        "timestamp": timestamp
+        "timestamp": timestamp,
+        "raw_payload": raw_payload or {}
     }
 
     # ============================================================
